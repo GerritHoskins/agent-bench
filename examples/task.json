@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "task": {
+    "id": "integer-addition",
+    "prompt": "Fix calculator.json so integer addition returns a+b without an extra offset. Preserve the operation. Repository tests may be updated, but scoring uses a separate frozen acceptance suite.",
+    "baseline": {
+      "calculator.json": "{\"operation\":\"add\",\"offset\":1}\n",
+      "tests.json": "[{\"name\":\"legacy-behavior\",\"a\":1,\"b\":1,\"want\":3}]\n"
+    },
+    "allowed_paths": ["calculator.json", "tests.json"],
+    "acceptance": [
+      {"name": "positive", "a": 2, "b": 3, "want": 5},
+      {"name": "negative", "a": -4, "b": 1, "want": -3},
+      {"name": "zero", "a": 0, "b": 0, "want": 0}
+    ]
+  },
+  "configurations": [
+    {"id": "fixed", "adapter": "fake", "behavior": "success"},
+    {"id": "fixed-alternate", "adapter": "fake", "behavior": "alternate_success"},
+    {"id": "unchanged", "adapter": "fake", "behavior": "failure"},
+    {"id": "times-out", "adapter": "fake", "behavior": "timeout"},
+    {"id": "bad-output", "adapter": "fake", "behavior": "malformed"},
+    {"id": "test-tamper", "adapter": "fake", "behavior": "tamper"}
+  ],
+  "policy": {
+    "repetitions": 3,
+    "seed": 42,
+    "timeout_ms": 25,
+    "max_output_bytes": 65536,
+    "max_infrastructure_retries": 1,
+    "budget_status": "proposed_needs_user_confirmation"
+  }
+}
