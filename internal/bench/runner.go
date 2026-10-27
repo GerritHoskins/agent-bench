@@ -28,6 +28,9 @@ func CreateBundle(ctx context.Context, m Manifest, root string) (Result, error) 
 	if err := ValidateManifest(m); err != nil {
 		return Result{}, err
 	}
+	if err := pinDockerImage(ctx, &m, installedDocker{}); err != nil {
+		return Result{}, err
+	}
 	s, release, err := openStore(root)
 	if err != nil {
 		return Result{}, err
@@ -47,6 +50,9 @@ func CreateBundle(ctx context.Context, m Manifest, root string) (Result, error) 
 		return Result{}, err
 	}
 	run := Run{SchemaVersion: SchemaVersion, ID: hex.EncodeToString(id), CreatedAt: time.Now().UTC(), Mode: "synthetic_fixture_simulation", Manifest: m, BaselineSHA256: digest(m.Task.Baseline), EvaluatorSHA256: digest(m.Task.Acceptance), Schedule: schedule(m)}
+	if m.Execution != nil {
+		run.Mode = "docker_fake_execution"
+	}
 	if err = s.json("inputs/baseline.json", m.Task.Baseline); err != nil {
 		return Result{}, err
 	}
@@ -114,7 +120,12 @@ func execute(ctx context.Context, s store, run Run, hook checkpointHook) error {
 				if i != len(attempts)-1 {
 					return fmt.Errorf("unfinished attempt before a later attempt")
 				}
-				if err := finish(s, t, a, RunnerFailure, "abandoned checkpoint recovered; dirty workspace retained and never reused", nil); err != nil {
+				if a.Docker != nil {
+					if err := recoverDocker(s, run, t, a); err != nil {
+						return err
+					}
+				}
+				if err := finish(s, t, a, RunnerFailure, "abandoned checkpoint recovered; available artifacts retained and workspace never reused", nil); err != nil {
 					return err
 				}
 			} else if err := checkCleanup(s, t, *a); err != nil {
@@ -168,7 +179,15 @@ func executeAttempt(ctx context.Context, s store, run Run, t Trial, c Configurat
 	if err := checkpoint(s, t, a, Running, hook); err != nil {
 		return err
 	}
-	raw := runFake(ctx, s, workspace, c, *a, run.Manifest.Policy)
+	var raw adapterResult
+	if run.Manifest.Execution != nil {
+		raw = runDocker(ctx, s, run, t, c, a)
+	} else {
+		raw = runFake(ctx, s, workspace, c, *a, run.Manifest.Policy)
+	}
+	if raw.cleanupErr != nil {
+		return raw.cleanupErr
+	}
 	limit := run.Manifest.Policy.MaxOutputBytes
 	overflow := len(raw.stdout)+len(raw.stderr) > limit
 	stdout := raw.stdout
@@ -311,15 +330,25 @@ func knownFailure(f FailureClass) bool {
 
 type cleanupEvidence struct {
 	Mode              string `json:"mode"`
-	ProcessesStarted  int    `json:"processes_started"`
+	ProcessesStarted  int    `json:"processes_started,omitempty"`
 	WorkspaceRetained bool   `json:"workspace_retained"`
+	ContainerName     string `json:"container_name,omitempty"`
+	ContainerRemoved  bool   `json:"container_removed,omitempty"`
 }
 
 func finish(s store, t Trial, a *Attempt, failure FailureClass, message string, hook checkpointHook) error {
-	// No child processes exist in this slice. If sealing evidence fails, stop the
-	// runner immediately; it must not silently advance to a subsequent trial.
+	// Docker cleanup must finish before any terminal checkpoint or retry.
 	cleanup := attemptDir(t, a.Number) + "/cleanup.json"
-	if err := s.json(cleanup, cleanupEvidence{Mode: "built_in_fake_only", ProcessesStarted: 0, WorkspaceRetained: true}); err != nil {
+	evidence := cleanupEvidence{Mode: "built_in_fake_only", WorkspaceRetained: true}
+	if a.Docker != nil {
+		if !a.Docker.Removed || a.Docker.CleanupError != "" {
+			return fmt.Errorf("Docker cleanup not confirmed; refusing to finish attempt")
+		}
+		evidence.Mode = "docker_fake"
+		evidence.ContainerName = a.Docker.Name
+		evidence.ContainerRemoved = true
+	}
+	if err := s.json(cleanup, evidence); err != nil {
 		return err
 	}
 	a.Artifacts["cleanup"] = cleanup
@@ -341,7 +370,11 @@ func checkCleanup(s store, t Trial, a Attempt) error {
 	if err := s.readJSON(attemptDir(t, a.Number)+"/cleanup.json", &evidence); err != nil {
 		return fmt.Errorf("cleanup not confirmed; refusing to advance: %w", err)
 	}
-	if evidence.Mode != "built_in_fake_only" || evidence.ProcessesStarted != 0 || !evidence.WorkspaceRetained {
+	valid := evidence.Mode == "built_in_fake_only" && evidence.ProcessesStarted == 0 && a.Docker == nil
+	if a.Docker != nil {
+		valid = evidence.Mode == "docker_fake" && evidence.ContainerName == a.Docker.Name && evidence.ContainerRemoved && a.Docker.Removed && a.Docker.CleanupError == ""
+	}
+	if !valid || !evidence.WorkspaceRetained {
 		return fmt.Errorf("invalid cleanup evidence; refusing to advance")
 	}
 	return nil

@@ -10,10 +10,11 @@ var ErrInterrupted = errors.New("execution interrupted; resume this bundle to re
 var ErrUnresolved = errors.New("some trials have no valid sample; inspect infrastructure failures in the report")
 
 type adapterResult struct {
-	stdout  []byte
-	stderr  []byte
-	failure FailureClass
-	err     error
+	stdout     []byte
+	stderr     []byte
+	failure    FailureClass
+	err        error
+	cleanupErr error // fatal: never retry or advance while a container may survive
 }
 
 // fakeExecute performs only hardcoded file writes and waits. It cannot invoke a

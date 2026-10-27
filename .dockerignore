@@ -1,0 +1,4 @@
+**
+!dist/
+!dist/docker/
+!dist/docker/agentbench-worker

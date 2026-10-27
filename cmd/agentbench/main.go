@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,14 +10,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 
-	"encoding/json"
 	"example.com/agentbench/examples"
 	"example.com/agentbench/internal/bench"
 )
 
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	os.Exit(command(ctx, os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -31,10 +32,11 @@ func command(ctx context.Context, args []string, out, errOut io.Writer) int {
 	}
 	flags := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	flags.SetOutput(errOut)
-	var output, manifest, bundle string
+	var output, manifest, bundle, dockerImage string
 	switch args[0] {
 	case "demo", "run":
 		flags.StringVar(&output, "out", "", "new, empty output bundle directory")
+		flags.StringVar(&dockerImage, "docker-image", "", "opt into Docker fake execution using an existing local image (never pulled)")
 		if args[0] == "run" {
 			flags.StringVar(&manifest, "manifest", "", "versioned fake-only JSON task manifest")
 		}
@@ -74,6 +76,12 @@ func command(ctx context.Context, args []string, out, errOut io.Writer) int {
 			m, err = bench.LoadManifest(manifest)
 		}
 		if err == nil {
+			if dockerImage != "" {
+				m.Execution = &bench.Execution{Backend: "docker", Image: dockerImage}
+				if args[0] == "demo" {
+					m.Policy.TimeoutMS = 2000
+				}
+			}
 			result, err = bench.CreateBundle(ctx, m, output)
 		}
 		bundle = output

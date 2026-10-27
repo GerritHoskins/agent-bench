@@ -9,7 +9,10 @@ import (
 	"strings"
 )
 
-type store struct{ root string }
+type store struct {
+	root   string
+	docker dockerCommander // nil selects the installed Docker CLI; injectable in tests
+}
 
 // path rejects symlinks in existing bundle components. Candidate files are never
 // followed through links, and every artifact path is relative to this bundle.
@@ -119,8 +122,11 @@ func (s store) loadRun() (Run, error) {
 	if err := s.readJSON("run.json", &run); err != nil {
 		return run, err
 	}
-	if run.SchemaVersion != SchemaVersion || run.Mode != "synthetic_fixture_simulation" {
+	if run.SchemaVersion != SchemaVersion || (run.Mode != "synthetic_fixture_simulation" && run.Mode != "docker_fake_execution") {
 		return run, fmt.Errorf("unsupported run schema or mode")
+	}
+	if (run.Mode == "docker_fake_execution") != (run.Manifest.Execution != nil) || (run.Manifest.Execution != nil && !imageID.MatchString(run.Manifest.Execution.Image)) {
+		return run, fmt.Errorf("run backend or pinned Docker image is invalid")
 	}
 	if err := ValidateManifest(run.Manifest); err != nil {
 		return run, err
@@ -167,6 +173,9 @@ func (s store) attempts(run Run) ([]Attempt, error) {
 			}
 			if err := validateAttempt(a, t); err != nil {
 				return nil, err
+			}
+			if a.Docker != nil && (run.Manifest.Execution == nil || a.Docker.Name != containerName(run, t, n) || a.Docker.Image != run.Manifest.Execution.Image) {
+				return nil, fmt.Errorf("invalid persisted container ownership")
 			}
 			closed = a.Counted || a.Failure == BaselineFailure || (a.State != Done && a.State != Failed)
 			all = append(all, a)

@@ -13,7 +13,7 @@
 <div class="eyebrow">AgentBench · offline fixture demo</div>
 <h1>Inspect the evidence.</h1>
 <p>{{.Run.Manifest.Task.Prompt}}</p>
-<div class="notice"><strong>Synthetic harness checks only.</strong> These built-in fake configurations do not measure model or agent performance. No provider calls, repository code execution, Docker containers, or paid inference occurred. This is a local file simulation, not an execution sandbox.</div>
+<div class="notice"><strong>Synthetic harness checks only.</strong> These built-in fake configurations do not measure model or agent performance. No provider calls, arbitrary repository code execution, or paid inference occurred. {{if .Run.Manifest.Execution}}The fake worker runs in a Linux Docker container with no host mounts or network. Trusted evaluation remains in the Go controller outside that container.{{else}}This run is a local file simulation; no Docker containers were used.{{end}}</div>
 <p><span class="badge">{{if .Result.Complete}}All planned samples resolved{{else}}Incomplete — samples unresolved{{end}}</span> &nbsp; Run <code>{{.Run.ID}}</code></p>
 
 <h2>Comparison</h2>
@@ -25,10 +25,11 @@
 
 <h2>Declared method</h2>
 <div class="panel"><dl>
-<dt>Budget policy</dt><dd><strong>Proposed — needs user confirmation.</strong> Equal adapter execution limit of {{.Run.Manifest.Policy.TimeoutMS}} ms; fixture file I/O is synchronous and not preempted. Preparation and evaluation are outside this timer. No monetary limit is needed for this fixture simulation.</dd>
+<dt>Budget policy</dt><dd><strong>Proposed — needs user confirmation.</strong> Equal adapter execution limit of {{.Run.Manifest.Policy.TimeoutMS}} ms. {{if .Run.Manifest.Execution}}The timer includes container start/attach. Container creation, cleanup and trusted evaluation are outside this timer; each Docker management command has a separate 20-second deadline.{{else}}Fixture file I/O is synchronous and not preempted. Preparation and evaluation are outside this timer.{{end}} No paid inference is used.</dd>
 <dt>Repetitions and order</dt><dd>{{.Run.Manifest.Policy.Repetitions}} per configuration; sequential execution, randomly interleaved within each repetition, seed {{.Run.Manifest.Policy.Seed}}. The exact schedule is saved in <a href="run.json">run.json</a>.</dd>
 <dt>Retry rule</dt><dd>At most {{.Run.Manifest.Policy.MaxInfrastructureRetries}} infrastructure retries per trial. Every attempt is retained. Only task failures, timeouts and invalid patches count as failed samples. A baseline failure stops that trial without a retry.</dd>
 <dt>Environment</dt><dd>Frozen synthetic calculator fixture; no Git commit or real repository benchmark. Fresh file snapshots per attempt, no shared caches, services, credentials or network.</dd>
+{{if .Run.Manifest.Execution}}<dt>Docker image</dt><dd><code>{{.Run.Manifest.Execution.Image}}</code> — resolved from a local image, never pulled. Non-root user, read-only root, private PID namespace, no capabilities, no new privileges, 32 PIDs, 64 MiB memory, 0.5 CPU, and a bounded temporary workspace. Raw container output and cleanup evidence are linked per attempt.</dd>{{end}}
 <dt>Baseline SHA-256</dt><dd><code>{{.Run.BaselineSHA256}}</code></dd>
 <dt>Trusted suite SHA-256</dt><dd><code>{{.Run.EvaluatorSHA256}}</code></dd>
 <dt>Instructions</dt><dd>Only the frozen prompt and fixture are inputs. Agent-specific instructions, hooks and tools are not loaded.</dd>
@@ -49,5 +50,5 @@
 </article>
 {{else}}<p>No attempts have been checkpointed yet.</p>{{end}}
 
-<footer><p class="links"><a href="run.json">Run and schedule</a><a href="results.json">Structured results</a><a href="inputs/baseline.json">Frozen baseline</a><a href="inputs/evaluator.json">Trusted acceptance suite</a></p><p>Local report; no scripts, fonts, analytics or remote assets. Keep the whole bundle to retain evidence links. Raw evidence is retained until you explicitly remove it; review contents before sharing. Docker execution and live adapters are outside this implementation slice.</p></footer>
+<footer><p class="links"><a href="run.json">Run and schedule</a><a href="results.json">Structured results</a><a href="inputs/baseline.json">Frozen baseline</a><a href="inputs/evaluator.json">Trusted acceptance suite</a></p><p>Local report; no scripts, fonts, analytics or remote assets. Keep the whole bundle to retain evidence links. Raw evidence is retained until you explicitly remove it; review contents before sharing. Live adapters and arbitrary repository execution remain out of scope.</p></footer>
 </main></body></html>

@@ -16,6 +16,8 @@ import (
 const maxManifestBytes = 1 << 20
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
+var imageReference = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9./:@_-]{0,255}$`)
+var imageID = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
 func decodeStrict(data []byte, target any) error {
 	d := json.NewDecoder(bytes.NewReader(data))
@@ -44,6 +46,9 @@ func LoadManifest(filename string) (Manifest, error) {
 func ValidateManifest(m Manifest) error {
 	if m.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d", m.SchemaVersion)
+	}
+	if m.Execution != nil && (m.Execution.Backend != "docker" || !imageReference.MatchString(m.Execution.Image)) {
+		return fmt.Errorf("execution requires backend docker and an explicit local image reference")
 	}
 	if !identifier.MatchString(m.Task.ID) || strings.TrimSpace(m.Task.Prompt) == "" {
 		return fmt.Errorf("task requires a safe ID and a prompt")
@@ -90,6 +95,10 @@ func ValidateManifest(m Manifest) error {
 		}
 		switch c.Behavior {
 		case "success", "alternate_success", "failure", "timeout", "malformed", "interrupted", "tamper", "out_of_scope", "runner_failure", "auth_failure", "provider_outage", "evaluator_failure":
+		case "isolation", "process_tree", "process_tree_timeout", "output_limit":
+			if m.Execution == nil {
+				return fmt.Errorf("behavior %s requires Docker execution", c.Behavior)
+			}
 		default:
 			return fmt.Errorf("unknown fake behavior %q", c.Behavior)
 		}

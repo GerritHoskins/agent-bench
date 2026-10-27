@@ -37,6 +37,14 @@ type Manifest struct {
 	Task           Task            `json:"task"`
 	Configurations []Configuration `json:"configurations"`
 	Policy         Policy          `json:"policy"`
+	Execution      *Execution      `json:"execution,omitempty"`
+}
+
+// A tag may be supplied initially, but run.json always pins its resolved local
+// image ID. No image is pulled and no container accepts host paths or secrets.
+type Execution struct {
+	Backend string `json:"backend"`
+	Image   string `json:"image"`
 }
 
 type Task struct {
@@ -133,6 +141,7 @@ type Attempt struct {
 	ChangedPaths    []string          `json:"changed_paths,omitempty"`
 	Artifacts       map[string]string `json:"artifacts"`
 	Cost            Cost              `json:"cost"`
+	Docker          *DockerEvidence   `json:"docker,omitempty"`
 }
 
 type Patch struct {

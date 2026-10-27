@@ -72,3 +72,14 @@ func TestCLIUsageAndInvalidInput(t *testing.T) {
 		t.Fatal("missing manifest accepted")
 	}
 }
+
+func TestCLIRejectsUnsafeDockerImageBeforeCreatingBundle(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "not-created")
+	code, _, errOut := invoke("demo", "--docker-image", "--privileged", "--out", root)
+	if code != 1 || !strings.Contains(errOut, "execution requires") {
+		t.Fatalf("unsafe image accepted: %d %s", code, errOut)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatal("invalid Docker option created a bundle")
+	}
+}
